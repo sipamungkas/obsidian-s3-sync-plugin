@@ -6,6 +6,5 @@
   "description": "Sync your vault to S3-compatible object storage with collision detection and conflict resolution",
   "author": "Ragil Burhanudin Pamungkas",
   "authorUrl": "https://github.com/sipamungkas",
-  "fundingUrl": "",
-  "isDesktopOnly": false
+  "isDesktopOnly": true
 }
