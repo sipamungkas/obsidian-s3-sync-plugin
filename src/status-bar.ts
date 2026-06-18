@@ -1,37 +1,32 @@
 /**
  * Status bar indicator for S3 Sync.
  *
- * Displays the current sync state as a clickable element in the
- * Obsidian status bar:
- *   ☁️ Synced      — last sync was successful
- *   ☁️ Syncing…   — sync in progress
- *   ☁️ Error      — last sync failed
- *   ☁️ Idle       — no sync has been performed yet
+ * Displays sync state as a clickable element:
+ *   ⏸️ Sync Paused  — automatic sync is paused (manual commands still work)
+ *   ☁️ Syncing…    — sync in progress
+ *   ☁️ Synced      — last sync was successful (with relative time)
+ *   ☁️ Sync Error  — last sync failed
+ *   ☁️ S3 Sync     — idle (no sync yet)
  *
- * Click to trigger a full sync.
+ * Click to pause or resume automatic sync.
  */
-
-import type { Notice } from "obsidian";
 
 export class SyncStatusBar {
 	private element: HTMLElement;
 	private status: string = "idle";
+	private paused: boolean = false;
 	private lastSyncTime: number = 0;
 	private onClickCallback: (() => void) | null = null;
 
-	constructor(statusBarEl: HTMLElement) {
+	constructor(statusBarEl: HTMLElement, paused: boolean = false) {
 		this.element = statusBarEl.createEl("span", {
 			cls: "s3-sync-status",
-			text: "☁️ S3 Sync",
 		});
-
+		this.paused = paused;
 		this.element.addEventListener("click", () => {
-			if (this.onClickCallback) {
-				this.onClickCallback();
-			}
+			if (this.onClickCallback) this.onClickCallback();
 		});
-
-		this.setStatus("idle");
+		this.render();
 	}
 
 	/** Register a callback for when the status bar is clicked. */
@@ -39,30 +34,54 @@ export class SyncStatusBar {
 		this.onClickCallback = callback;
 	}
 
-	/** Update the displayed status. */
+	/** Update whether sync is paused (changes the visual). */
+	setPaused(paused: boolean): void {
+		this.paused = paused;
+		this.render();
+	}
+
+	isPaused(): boolean {
+		return this.paused;
+	}
+
+	/** Update the sync status. */
 	setStatus(status: string): void {
 		this.status = status;
+		this.render();
+	}
 
-		this.element.removeClass("syncing", "synced", "error", "idle");
+	private render(): void {
+		this.element.removeClass("syncing", "synced", "error", "idle", "paused");
 
-		switch (status) {
+		if (this.paused) {
+			this.element.setText("⏸️ Sync Paused");
+			this.element.addClass("paused");
+			this.element.setAttr("aria-label", "Click to resume automatic sync");
+			return;
+		}
+
+		switch (this.status) {
 			case "syncing":
 				this.element.setText("☁️ Syncing…");
 				this.element.addClass("syncing");
+				this.element.setAttr("aria-label", "Sync in progress — click to pause");
 				break;
 			case "synced":
 				this.lastSyncTime = Date.now();
 				this.element.setText(this.formatLabel("☁️ Synced"));
 				this.element.addClass("synced");
+				this.element.setAttr("aria-label", "Click to pause automatic sync");
 				break;
 			case "error":
 				this.element.setText("☁️ Sync Error");
 				this.element.addClass("error");
+				this.element.setAttr("aria-label", "Click to pause automatic sync");
 				break;
 			case "idle":
 			default:
 				this.element.setText("☁️ S3 Sync");
 				this.element.addClass("idle");
+				this.element.setAttr("aria-label", "Click to pause automatic sync");
 				break;
 		}
 	}

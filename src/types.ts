@@ -27,6 +27,8 @@ export interface S3SyncSettings {
 	syncOnSave: boolean;
 	/** Whether to perform a full sync when the plugin starts */
 	syncOnStartup: boolean;
+	/** Pause all automatic sync (file watchers, interval, startup). Manual commands still work. */
+	syncPaused: boolean;
 	/** Glob patterns to exclude from sync */
 	excludePatterns: string[];
 	/** Maximum number of sync log entries to retain */
@@ -46,6 +48,7 @@ export const DEFAULT_SETTINGS: S3SyncSettings = {
 	syncOnSave: true,
 	/** Whether to perform a full sync when the plugin starts */
 	syncOnStartup: true,
+	syncPaused: false,
 	excludePatterns: [
 		".obsidian/**",
 		".trash/**",

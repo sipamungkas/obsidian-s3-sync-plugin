@@ -233,6 +233,18 @@ export class S3SyncSettingTab extends PluginSettingTab {
 					})
 			);
 
+		new Setting(containerEl)
+			.setName("Pause sync")
+			.setDesc("Pause all automatic sync. File watchers and interval sync are disabled. Manual commands (Full sync, Push, Pull) still work.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.syncPaused)
+					.onChange(async (value) => {
+						this.plugin.settings.syncPaused = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
 		// ─── Exclude Patterns ─────────────────────────────────────
 		containerEl.createEl("h3", { text: "Exclude" });
 

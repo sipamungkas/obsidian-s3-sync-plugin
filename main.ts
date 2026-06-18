@@ -3,7 +3,7 @@
  *
  * Fully automatic bidirectional sync to S3-compatible object storage.
  *
- * Automatic sync triggers:
+ * Automatic sync triggers (all skipped when paused):
  *   - File created  → smartSyncFile (push new file)
  *   - File modified → smartSyncFile (push if local changed)
  *   - File deleted  → deleteRemoteFile
@@ -11,8 +11,8 @@
  *   - On startup    → full sync (after 3s delay)
  *   - On interval   → full sync (every N seconds, default 60)
  *
- * Every per-file sync uses three-way collision detection:
- *   localHash vs remoteETag vs lastSyncedHash
+ * Pause: status bar click or settings toggle or command.
+ * Manual commands (full sync, push, pull) ALWAYS work regardless of pause.
  */
 
 import { App, Modal, Plugin, Notice, type TAbstractFile } from "obsidian";
@@ -57,9 +57,12 @@ export default class S3SyncPlugin extends Plugin {
 			this.settings
 		);
 
-		// 3. Status bar (click triggers full sync)
-		this.statusBar = new SyncStatusBar(this.addStatusBarItem());
-		this.statusBar.onClick(() => this.runFullSync());
+		// 3. Status bar — click toggles pause/resume
+		this.statusBar = new SyncStatusBar(
+			this.addStatusBarItem(),
+			this.settings.syncPaused
+		);
+		this.statusBar.onClick(() => this.togglePause());
 		this.syncEngine.setOnStatusChange((status) =>
 			this.statusBar.setStatus(status)
 		);
@@ -67,7 +70,7 @@ export default class S3SyncPlugin extends Plugin {
 		// 4. Settings tab
 		this.addSettingTab(new S3SyncSettingTab(this.app, this));
 
-		// 5. Commands (kept for manual overrides and visibility)
+		// 5. Commands — manual triggers ALWAYS work (even when paused)
 		this.addCommand({
 			id: "s3-sync-full",
 			name: "Full sync now",
@@ -110,10 +113,16 @@ export default class S3SyncPlugin extends Plugin {
 			},
 		});
 
-		// 6. Auto-sync interval (periodic full sync to catch remote changes)
+		this.addCommand({
+			id: "s3-sync-toggle-pause",
+			name: "Pause / Resume sync",
+			callback: () => this.togglePause(),
+		});
+
+		// 6. Auto-sync interval (respects pause)
 		this.restartAutoSync();
 
-		// 7. File watchers — ALWAYS active, sync automatically on every change
+		// 7. File watchers — always registered, pause check at call time
 		this.registerEvent(
 			this.app.vault.on("modify", (file) => this.onFileModified(file))
 		);
@@ -129,8 +138,8 @@ export default class S3SyncPlugin extends Plugin {
 			)
 		);
 
-		// 8. Startup sync — full bidirectional after a short delay
-		if (this.settings.syncOnStartup) {
+		// 8. Startup sync (respects pause)
+		if (this.settings.syncOnStartup && !this.settings.syncPaused) {
 			this.scheduleStartupSync();
 		}
 	}
@@ -138,7 +147,6 @@ export default class S3SyncPlugin extends Plugin {
 	onunload(): void {
 		console.log("[S3-Sync] Unloading plugin");
 		this.stopAutoSync();
-		// Clear all pending debounce timers
 		for (const timer of this.dirtyFiles.values()) {
 			clearTimeout(timer);
 		}
@@ -163,6 +171,10 @@ export default class S3SyncPlugin extends Plugin {
 		if (this.s3Client) {
 			this.s3Client.reconfigure(this.settings);
 		}
+		// Keep status bar in sync with settings (e.g. pause toggle from settings tab)
+		if (this.statusBar) {
+			this.statusBar.setPaused(this.settings.syncPaused);
+		}
 	}
 
 	// ─── Connection Test ─────────────────────────────────────────────
@@ -174,12 +186,42 @@ export default class S3SyncPlugin extends Plugin {
 		return client.testConnection();
 	}
 
+	// ─── Pause / Resume ───────────────────────────────────────────────
+
+	/**
+	 * Toggle automatic sync on/off.
+	 *
+	 * When paused:
+	 *   - All file watchers are silent (no smartSyncFile, no delete/rename ops)
+	 *   - Interval sync is skipped
+	 *   - Startup sync is skipped
+	 *
+	 * Manual commands (Full sync, Push, Pull) ALWAYS work regardless of pause.
+	 */
+	async togglePause(): Promise<void> {
+		this.settings.syncPaused = !this.settings.syncPaused;
+		await this.saveSettings();
+
+		if (this.settings.syncPaused) {
+			this.syncEngine.addLog("info", "⏸️ Automatic sync paused");
+			new Notice("⏸️ S3 Sync paused — manual commands still work");
+		} else {
+			this.syncEngine.addLog("info", "▶️ Automatic sync resumed");
+			new Notice("▶️ S3 Sync resumed");
+			// Run a full sync to catch up
+			this.runFullSync();
+		}
+	}
+
+	private isPaused(): boolean {
+		return this.settings.syncPaused;
+	}
+
 	// ─── Startup Sync ─────────────────────────────────────────────────
 
 	private scheduleStartupSync(): void {
-		// Wait 3 seconds for Obsidian to fully initialise, then do a full sync
 		setTimeout(() => {
-			if (this.startupSyncDone) return;
+			if (this.startupSyncDone || this.isPaused()) return;
 			console.log("[S3-Sync] Running startup sync…");
 			this.runFullSync().then(() => {
 				this.startupSyncDone = true;
@@ -195,6 +237,10 @@ export default class S3SyncPlugin extends Plugin {
 		const interval = this.settings.autoSyncInterval;
 		if (interval > 0) {
 			this.autoSyncIntervalId = setInterval(() => {
+				if (this.isPaused()) {
+					console.log("[S3-Sync] Interval sync skipped (paused)");
+					return;
+				}
 				console.log("[S3-Sync] Interval sync triggered");
 				this.syncEngine.fullSync().then((result) => {
 					if (
@@ -221,26 +267,20 @@ export default class S3SyncPlugin extends Plugin {
 		}
 	}
 
-	// ─── File Watchers (always active) ────────────────────────────────
+	// ─── File Watchers (paused = no-op) ───────────────────────────────
 
-	/**
-	 * File modified — debounce per-file, then smartSyncFile.
-	 *
-	 * Debounce is per-file (not global): typing rapidly in file A won't
-	 * block file B from syncing.
-	 */
 	private onFileModified(file: TAbstractFile): void {
-		const path = file.path;
+		if (this.isPaused()) return;
 
-		// Clear existing timer for this specific file
+		const path = file.path;
 		const existing = this.dirtyFiles.get(path);
 		if (existing) clearTimeout(existing);
 
-		// Set a new debounced timer for this file
 		this.dirtyFiles.set(
 			path,
 			setTimeout(() => {
 				this.dirtyFiles.delete(path);
+				if (this.isPaused()) return;
 				console.log(`[S3-Sync] Auto-syncing modified file: ${path}`);
 				this.syncEngine.smartSyncFile(path).catch((err) => {
 					console.error(
@@ -252,12 +292,10 @@ export default class S3SyncPlugin extends Plugin {
 		);
 	}
 
-	/**
-	 * File created — immediate sync (no debounce for new files).
-	 */
 	private onFileCreated(file: TAbstractFile): void {
+		if (this.isPaused()) return;
+
 		const path = file.path;
-		// Skip directory markers and internal files
 		if (path.endsWith("/") || path.endsWith(".dir")) return;
 
 		console.log(`[S3-Sync] Auto-syncing new file: ${path}`);
@@ -269,12 +307,10 @@ export default class S3SyncPlugin extends Plugin {
 		});
 	}
 
-	/**
-	 * File deleted locally — delete from remote immediately.
-	 */
 	private onFileDeleted(file: TAbstractFile): void {
+		if (this.isPaused()) return;
+
 		const path = file.path;
-		// Cancel any pending sync for this file
 		const timer = this.dirtyFiles.get(path);
 		if (timer) {
 			clearTimeout(timer);
@@ -290,17 +326,14 @@ export default class S3SyncPlugin extends Plugin {
 		});
 	}
 
-	/**
-	 * File renamed — upload to new path, delete old path.
-	 */
 	private onFileRenamed(file: TAbstractFile, oldPath: string): void {
-		const newPath = file.path;
+		if (this.isPaused()) return;
 
+		const newPath = file.path;
 		console.log(
 			`[S3-Sync] Auto-syncing rename: ${oldPath} → ${newPath}`
 		);
 
-		// Upload the renamed file to the new key
 		this.syncEngine.smartSyncFile(newPath).catch((err) => {
 			console.error(
 				`[S3-Sync] Rename upload failed for ${newPath}:`,
@@ -308,7 +341,6 @@ export default class S3SyncPlugin extends Plugin {
 			);
 		});
 
-		// Delete the old key from remote
 		this.syncEngine.deleteRemoteFile(oldPath).catch((err) => {
 			console.error(
 				`[S3-Sync] Rename delete-old failed for ${oldPath}:`,
@@ -348,7 +380,6 @@ export default class S3SyncPlugin extends Plugin {
 		if (conflicts > 0 || errors > 0) {
 			new Notice(`[S3 Sync] ${summary}`, errors > 0 ? 8000 : 4000);
 		}
-		// Don't show a notice for "No changes" — silent is better for auto-sync
 	}
 
 	private showSyncLog(): void {
