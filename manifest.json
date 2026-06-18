@@ -1,5 +1,5 @@
 {
-  "id": "s3-sync",
+  "id": "s3-vault-sync",
   "name": "S3 Sync",
   "version": "1.0.0",
   "minAppVersion": "1.5.0",
