@@ -22,7 +22,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --prefer-offline
 
       - name: Bump version
         run: node version-bump.mjs ${{ github.ref_name }}
