@@ -1,0 +1,86 @@
+/* S3 Sync Plugin Styles */
+
+/* Status bar indicator */
+.s3-sync-status {
+  cursor: pointer;
+}
+
+.s3-sync-status.syncing {
+  color: var(--color-yellow);
+}
+
+.s3-sync-status.synced {
+  color: var(--color-green);
+}
+
+.s3-sync-status.error {
+  color: var(--color-red);
+}
+
+.s3-sync-status.idle {
+  color: var(--text-muted);
+}
+
+/* Conflict resolution dialog */
+.s3-sync-conflict-modal {
+  padding: 0;
+}
+
+.s3-sync-conflict-modal .setting-item {
+  border-top: none;
+  padding: 12px 0;
+}
+
+.s3-sync-conflict-modal .conflict-file {
+  font-weight: 600;
+  color: var(--text-normal);
+  margin-bottom: 8px;
+}
+
+.s3-sync-conflict-modal .conflict-detail {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  margin-bottom: 12px;
+}
+
+/* Sync log view */
+.s3-sync-log-entry {
+  font-family: var(--font-monospace);
+  font-size: 0.85em;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.s3-sync-log-entry.conflict {
+  color: var(--color-orange);
+}
+
+.s3-sync-log-entry.error {
+  color: var(--color-red);
+}
+
+.s3-sync-log-entry.success {
+  color: var(--color-green);
+}
+
+.s3-sync-log-entry.info {
+  color: var(--text-muted);
+}
+
+/* Settings styles */
+.s3-sync-settings .connection-status {
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.s3-sync-settings .connection-status.success {
+  background-color: var(--color-green);
+  color: var(--text-on-accent);
+}
+
+.s3-sync-settings .connection-status.error {
+  background-color: var(--color-red);
+  color: var(--text-on-accent);
+}
