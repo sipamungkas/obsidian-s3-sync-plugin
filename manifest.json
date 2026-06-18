@@ -1,11 +1,11 @@
 {
-  "id": "obsidian-s3-sync",
+  "id": "s3-sync",
   "name": "S3 Sync",
   "version": "1.0.0",
   "minAppVersion": "1.5.0",
   "description": "Sync your vault to S3-compatible object storage with collision detection and conflict resolution",
-  "author": "",
-  "authorUrl": "",
+  "author": "Ragil Burhanudin Pamungkas",
+  "authorUrl": "https://github.com/sipamungkas",
   "fundingUrl": "",
   "isDesktopOnly": false
 }
